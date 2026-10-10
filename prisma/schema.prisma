@@ -1,0 +1,404 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+  tool
+}
+
+enum MessageStatus {
+  pending
+  streaming
+  completed
+  failed
+  cancelled
+}
+
+enum RunStatus {
+  queued
+  thinking
+  working
+  waiting
+  stopping
+  completed
+  failed
+  cancelled
+}
+
+enum ToolStatus {
+  pending
+  running
+  completed
+  failed
+  cancelled
+}
+
+enum WaitpointStatus {
+  pending
+  answered
+  expired
+  cancelled
+}
+
+enum CreditEntryType {
+  grant
+  hold
+  capture
+  release
+}
+
+enum AssetKind {
+  image
+  video
+  audio
+  other
+}
+
+model User {
+  id            String            @id @default(cuid())
+  clerkUserId   String            @unique
+  creditBalance BigInt            @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  chats         Chat[]
+  runs          AgentRun[]
+  ledger        CreditLedger[]
+  assets        Asset[]
+  uploads       UploadAssembly[]
+  rateLimits    RateLimitBucket[]
+  apiKeys       ApiKey[]
+  webhooks      WebhookEndpoint[]
+  directTools   DirectToolRun[]
+}
+
+model Chat {
+  id            String        @id @default(cuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String        @default("New chat")
+  pinnedAt      DateTime?
+  activeRunId   String?       @unique
+  activeRun     AgentRun?     @relation("ChatActiveRun", fields: [activeRunId], references: [id], onDelete: SetNull)
+  lastMessageAt DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  messages      Message[]
+  runs          AgentRun[]    @relation("ChatRuns")
+  session       AgentSession?
+
+  @@index([userId, lastMessageAt(sort: Desc), id(sort: Desc)])
+  @@index([userId, pinnedAt])
+}
+
+model Message {
+  id                     String        @id @default(cuid())
+  chatId                 String
+  chat                   Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  runId                  String?
+  run                    AgentRun?     @relation("RunMessages", fields: [runId], references: [id], onDelete: SetNull)
+  role                   MessageRole
+  status                 MessageStatus
+  content                Json
+  contentText            String        @default("")
+  clientMessageId        String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  attachments            Attachment[]
+  userMessageForRun      AgentRun?     @relation("RunUserMessage")
+  assistantMessageForRun AgentRun?     @relation("RunAssistantMessage")
+
+  @@unique([chatId, clientMessageId])
+  @@index([chatId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([runId])
+}
+
+model AgentRun {
+  id                  String           @id @default(cuid())
+  chatId              String
+  chat                Chat             @relation("ChatRuns", fields: [chatId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeFor           Chat?            @relation("ChatActiveRun")
+  userMessageId       String?          @unique
+  userMessage         Message?         @relation("RunUserMessage", fields: [userMessageId], references: [id], onDelete: SetNull)
+  assistantMessageId  String?          @unique
+  assistantMessage    Message?         @relation("RunAssistantMessage", fields: [assistantMessageId], references: [id], onDelete: SetNull)
+  status              RunStatus        @default(queued)
+  planMode            Boolean          @default(false)
+  triggerRunId        String?
+  traceId             String?
+  routedModel         String?
+  promptTokens        Int              @default(0)
+  completionTokens    Int              @default(0)
+  heldMicrocredits    BigInt           @default(0)
+  chargedMicrocredits BigInt           @default(0)
+  errorCode           String?
+  errorMessage        String?
+  stepCount           Int              @default(0)
+  heartbeatAt         DateTime         @default(now())
+  cancelRequestedAt   DateTime?
+  startedAt           DateTime?
+  finishedAt          DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  messages            Message[]        @relation("RunMessages")
+  tools               ToolInvocation[]
+  skills              RunSkill[]
+  waitpoints          Waitpoint[]
+  ledger              CreditLedger[]
+
+  @@index([status, heartbeatAt])
+  @@index([chatId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model ToolInvocation {
+  id                    String     @id @default(cuid())
+  runId                 String
+  run                   AgentRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  toolCallId            String
+  ordinal               Int
+  name                  String
+  status                ToolStatus @default(pending)
+  input                 Json
+  output                Json?
+  externalRunId         String?
+  durationMs            Int?
+  estimatedMicrocredits BigInt     @default(0)
+  chargedMicrocredits   BigInt     @default(0)
+  errorMessage          String?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  assets                Asset[]
+
+  @@unique([runId, toolCallId])
+  @@index([runId, ordinal])
+}
+
+model SkillSnapshot {
+  hash      String     @id
+  name      String
+  body      String
+  createdAt DateTime   @default(now())
+  runs      RunSkill[]
+}
+
+model RunSkill {
+  id        String        @id @default(cuid())
+  runId     String
+  run       AgentRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name      String
+  hash      String
+  snapshot  SkillSnapshot @relation(fields: [hash], references: [hash])
+  createdAt DateTime      @default(now())
+
+  @@unique([runId, name])
+}
+
+model Waitpoint {
+  id         String          @id @default(cuid())
+  runId      String
+  run        AgentRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  tokenId    String          @unique
+  toolCallId String
+  kind       String
+  status     WaitpointStatus @default(pending)
+  request    Json
+  response   Json?
+  expiresAt  DateTime
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([runId, toolCallId])
+  @@index([runId, status])
+  @@index([status, expiresAt])
+}
+
+enum AssetSource {
+  upload
+  generated
+}
+
+enum AssemblyStatus {
+  pending
+  completed
+  failed
+  canceled
+}
+
+model UploadAssembly {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assemblyId    String?        @unique
+  status        AssemblyStatus @default(pending)
+  declaredBytes BigInt
+  actualBytes   BigInt         @default(0)
+  fileCount     Int
+  errorCode     String?
+  errorMessage  String?
+  expiresAt     DateTime
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  assets        Asset[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Asset {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind             AssetKind
+  source           AssetSource     @default(upload)
+  mime             String
+  bytes            BigInt?
+  originalName     String?
+  storageKey       String?
+  sourceUrl        String?
+  isTemporaryUrl   Boolean         @default(false)
+  assemblyId       String?
+  fileId           String?
+  uploadId         String?
+  upload           UploadAssembly? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
+  toolInvocationId String?
+  toolInvocation   ToolInvocation? @relation(fields: [toolInvocationId], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  attachments      Attachment[]
+
+  @@unique([assemblyId, fileId])
+  @@unique([toolInvocationId, sourceUrl])
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  position  Int
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, position])
+  @@index([assetId])
+}
+
+model CreditLedger {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type             CreditEntryType
+  amount           BigInt
+  balanceAfter     BigInt
+  runId            String?
+  run              AgentRun?       @relation(fields: [runId], references: [id], onDelete: SetNull)
+  toolInvocationId String?
+  directToolRunId  String?
+  directToolRun    DirectToolRun?  @relation(fields: [directToolRunId], references: [id], onDelete: SetNull)
+  idempotencyKey   String          @unique
+  createdAt        DateTime        @default(now())
+
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([runId])
+  @@index([directToolRunId])
+}
+
+model ApiKey {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  prefix    String
+  hash      String    @unique
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@index([userId, createdAt])
+}
+
+model WebhookEndpoint {
+  id         String             @id @default(cuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url        String
+  secret     String
+  createdAt  DateTime           @default(now())
+  disabledAt DateTime?
+  deliveries WebhookDelivery[]
+
+  @@index([userId, createdAt])
+}
+
+model WebhookDelivery {
+  id         String           @id @default(cuid())
+  endpointId String
+  endpoint   WebhookEndpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventId    String
+  type       String
+  payload    Json
+  status     String           @default("pending")
+  attempts      Int              @default(0)
+  lastError     String?
+  nextAttemptAt DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([endpointId, eventId])
+  @@index([status, nextAttemptAt])
+}
+
+model DirectToolRun {
+  id                    String         @id @default(cuid())
+  userId                String
+  user                  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                  String
+  status                ToolStatus     @default(pending)
+  input                 Json
+  output                Json?
+  externalRunId         String?
+  triggerRunId          String?
+  idempotencyKey        String         @unique
+  durationMs            Int?
+  estimatedMicrocredits BigInt         @default(0)
+  chargedMicrocredits   BigInt         @default(0)
+  errorMessage          String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  ledger                CreditLedger[]
+
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
+}
+
+model AgentSession {
+  chatId          String   @id
+  chat            Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  lastRoutedModel String?
+  updatedAt       DateTime @updatedAt
+}
+
+model UploadUsage {
+  id       String @id @default(cuid())
+  monthKey String @unique
+  bytes    BigInt @default(0)
+}
+
+model RateLimitBucket {
+  id          String   @id @default(cuid())
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([key, windowStart])
+}
