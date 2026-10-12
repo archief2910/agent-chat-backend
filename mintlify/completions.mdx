@@ -1,0 +1,43 @@
+---
+title: Conversations
+description: Create a chat, submit a message, and read history.
+---
+
+## Start a turn
+
+`POST /api/v1/chat/completions`
+
+```json
+{
+  "chatId": "optional existing chat",
+  "text": "Crop the left half of the attached image.",
+  "clientMessageId": "6f1c9a4e-6b3a-4d5e-9f21-0c2a9b7d4e11",
+  "planMode": false
+}
+```
+
+Omit `chatId` to create a chat. Send the same `clientMessageId` again to get the original run instead of a second one.
+
+`202` response:
+
+```json
+{
+  "chatId": "chat_123",
+  "messageId": "msg_user",
+  "assistantMessageId": "msg_assistant",
+  "runId": "run_123",
+  "status": "queued",
+  "replayed": false,
+  "realtime": { "token": "pk_...", "triggerRunId": "run_trigger", "streamId": "agent-output" }
+}
+```
+
+`POST /api/v1/chats/{chatId}/messages` takes the same message body.
+
+## Read
+
+- `GET /api/v1/chats?cursor=&limit=&q=` returns pinned chats separately from the cursor page, so pinning a chat does not shift the cursor.
+- `GET /api/v1/chats/{chatId}/messages?cursor=` returns the newest page first. `nextCursor` asks for older messages.
+- `q` searches chat titles and message text.
+
+`DELETE /api/v1/chats/{chatId}` removes the chat for its owner only.

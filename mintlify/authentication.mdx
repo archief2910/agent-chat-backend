@@ -1,0 +1,20 @@
+---
+title: Authentication
+description: Clerk session tokens and API keys.
+---
+
+Send `Authorization: Bearer <credential>` on every route except `GET /api/health` and `POST /api/v1/uploads/notify`.
+
+## Clerk
+
+Browser clients send the Clerk session token from `getToken()`. The API checks that the token's authorized party is the frontend origin.
+
+## API keys
+
+`POST /api/v1/api-keys` with a Clerk session returns a key once:
+
+```json
+{ "id": "key_123", "name": "local", "prefix": "ak_a1b2c3d4e", "key": "ak_...", "createdAt": "2026-10-10T12:00:00.000Z" }
+```
+
+Store `key`. Later calls show only `prefix`. `DELETE /api/v1/api-keys/{keyId}` revokes it. A revoked or unknown key gets the same `401` as a missing session.

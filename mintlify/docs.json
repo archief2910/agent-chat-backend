@@ -1,0 +1,22 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Agent Chat API",
+  "description": "Versioned API for agent conversations, Magica tool runs, and signed lifecycle webhooks.",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "pages": ["introduction", "authentication", "errors"]
+      },
+      {
+        "group": "API",
+        "pages": ["completions", "runs", "tools"]
+      },
+      {
+        "group": "Webhooks",
+        "pages": ["webhooks"]
+      }
+    ]
+  }
+}

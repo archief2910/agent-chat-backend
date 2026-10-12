@@ -1,0 +1,35 @@
+---
+title: Magica tools
+description: Run Crop Image, GPT Image 2, or Merge Videos without a chat.
+---
+
+`POST /api/v1/tools/{name}/runs`
+
+`name` is `crop_image`, `gpt_image_2`, or `merge_videos`.
+
+```json
+{
+  "clientRequestId": "3b1c5d7e-1111-4222-8333-444455556666",
+  "input": {
+    "image_url": "https://cdn.example/photo.png",
+    "x_percent": 0,
+    "y_percent": 0,
+    "width_percent": 50,
+    "height_percent": 100
+  }
+}
+```
+
+The response is `202` with the tool run id. The same `clientRequestId` returns the existing run.
+
+`GET /api/v1/tools/runs/{runId}` returns `status`, `externalRunId`, `output`, `chargedMicrocredits`, and `errorMessage`.
+
+## How the agent calls them
+
+Inside a conversation the model chooses the tool. There is no model picker.
+
+- Crop Image takes `image_url` and one complete rectangle: all four percent fields, pixel width and height, or `crop` with `x`, `y`, `width`, and `height`.
+- GPT Image 2 uses the text sub-model unless `uploadedImages` is present, which selects the edit sub-model. Every other field is checked against Magica's current schema.
+- Merge Videos takes `video_urls` in playback order, from 2 to 100, and `transition` of `none`, `fade`, or `dissolve`.
+
+The server calls `POST /v1/nodes/{nodeType}/run`, saves `runId`, then polls `GET /v1/nodes/runs/{runId}`. A retry reuses that id. Result URLs are stored as generated assets.

@@ -1,0 +1,58 @@
+---
+title: Webhooks
+description: Signed notices for agent and tool lifecycle events.
+---
+
+`POST /api/v1/webhooks` registers an HTTPS URL. The response includes `secret` once, prefixed with `whsec_`. Store it. The list endpoint does not return it again.
+
+Deliveries are HTTP `POST` with `Content-Type: application/json` and these headers:
+
+| Header | Meaning |
+| --- | --- |
+| `webhook-id` | Stable id for this event and endpoint. A retry of the same event reuses it. |
+| `webhook-timestamp` | Unix seconds used in the signature. |
+| `webhook-signature` | `v1,` plus base64 HMAC-SHA256. |
+
+The signed string is `{webhook-id}.{webhook-timestamp}.{raw body}`. The HMAC key is the base64 data after `whsec_`.
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(secret, id, timestamp, rawBody, header) {
+  const key = Buffer.from(secret.slice("whsec_".length), "base64");
+  const digest = createHmac("sha256", key).update(`${id}.${timestamp}.${rawBody}`).digest("base64");
+  const expected = Buffer.from(`v1,${digest}`);
+  const actual = Buffer.from(header);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+```
+
+Compare the raw body before parsing it. Respond `2xx` quickly. A non-2xx response is retried up to 5 times.
+
+## Events
+
+| Type | When |
+| --- | --- |
+| `agent.started` | A durable agent turn begins. |
+| `agent.completed` | The assistant turn finished. |
+| `agent.failed` | The turn failed or was cancelled. `data.status` says which. |
+| `tool.completed` | A tool finished, including a failed tool. `data.status` is `completed` or `failed`. |
+
+```json
+{
+  "id": "agent.completed:run_123",
+  "type": "agent.completed",
+  "createdAt": "2026-10-10T12:00:00.000Z",
+  "data": {
+    "chatId": "chat_123",
+    "runId": "run_123",
+    "messageId": "msg_assistant",
+    "status": "completed",
+    "routedModel": "openrouter/free"
+  }
+}
+```
+
+Fields named like keys, secrets, or tokens are removed before delivery. The Magica key is never included.
+
+`DELETE /api/v1/webhooks/{webhookId}` stops further deliveries.

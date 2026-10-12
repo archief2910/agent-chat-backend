@@ -1,0 +1,33 @@
+---
+title: Errors
+description: The error envelope returned by every JSON route.
+---
+
+Failed requests use one shape:
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_CREDITS",
+    "message": "You do not have enough credits for this turn.",
+    "retryable": false,
+    "traceId": "8f0c...",
+    "details": []
+  }
+}
+```
+
+`message` is safe to show. `traceId` matches the `x-request-id` response header and the server log.
+
+| Status | Code | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | The body or a tool field is invalid. `details` lists the fields. |
+| 401 | `UNAUTHENTICATED` | The credential is missing, revoked, or rejected. |
+| 402 | `INSUFFICIENT_CREDITS` | The balance cannot cover the hold. |
+| 404 | `NOT_FOUND` | The record is missing or belongs to someone else. |
+| 409 | `RUN_ACTIVE` | This chat already has a run. `details.runId` is that run. |
+| 409 | `CONFLICT` | A retry was asked for a turn that is not failed or cancelled. |
+| 410 | `WAITPOINT_CLOSED` | The approval is no longer waiting. Send a new message. |
+| 429 | `RATE_LIMITED` or `UPLOAD_QUOTA_EXCEEDED` | Too many sends, or the monthly upload allowance is used. |
+| 502 | `UPSTREAM_UNAUTHORIZED` | Magica rejected the server key. The key is not included. |
+| 503 | `UPLOADS_UNAVAILABLE` | Transloadit is not configured. |

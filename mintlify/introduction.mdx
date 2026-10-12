@@ -1,0 +1,14 @@
+---
+title: Introduction
+description: How a long-running agent turn works.
+---
+
+The API is served from `/api/v1`. A message does not wait for the model to finish.
+
+1. `POST /api/v1/chat/completions` or `POST /api/v1/chats/{chatId}/messages` validates the caller, saves the user message, and starts one durable run.
+2. The response is `202` with `runId`. Poll `GET /api/v1/runs/{runId}` until `status` is `completed`, `failed`, or `cancelled`.
+3. Text streams separately from run status. Postgres remains the copy that a reload reads.
+
+A chat can have one active run. A second send returns `409` with that run's id.
+
+Crop Image, GPT Image 2, and Merge Videos run on Magica. The Magica key never leaves the server.

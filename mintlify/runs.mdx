@@ -1,0 +1,41 @@
+---
+title: Runs
+description: Poll status, stop a turn, or retry a failed one.
+---
+
+`GET /api/v1/runs/{runId}`
+
+```json
+{
+  "id": "run_123",
+  "chatId": "chat_123",
+  "status": "working",
+  "progress": 40,
+  "routedModel": "openrouter/free",
+  "stepCount": 2,
+  "error": null,
+  "waitpoint": null,
+  "assistantMessage": { "content": [] },
+  "tools": [
+    {
+      "toolCallId": "call_1",
+      "name": "crop_image",
+      "status": "running",
+      "durationMs": null,
+      "chargedMicrocredits": "0",
+      "errorMessage": null
+    }
+  ],
+  "usage": { "promptTokens": 0, "completionTokens": 0, "chargedMicrocredits": "0", "credits": "0" }
+}
+```
+
+`status` moves through `queued`, `thinking`, `working`, `waiting`, `stopping`, then `completed`, `failed`, or `cancelled`. `progress` reaches `100` only at a terminal status.
+
+`routedModel` is the model OpenRouter Free actually selected. The request itself is always `openrouter/free`.
+
+`POST /api/v1/runs/{runId}/cancel` stops the turn.
+
+`POST /api/v1/runs/{runId}/retry` is allowed only when the run is `failed` or `cancelled`. It submits the same user text and attachments as a new turn. Send `clientMessageId` to make that retry idempotent.
+
+`POST /api/v1/runs/{runId}/realtime-token` mints a new read token. Use it when the stream token expires. Keep polling this status route if the stream disconnects.
